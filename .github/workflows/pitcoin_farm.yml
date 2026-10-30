@@ -1,4 +1,4 @@
-name: Auto Pitcoin Mines 3-Bom
+name: Auto Pitcoin Farm & Boost 24/7
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     - cron: '*/30 * * * *'
 
 jobs:
-  run-mines:
+  run-farm:
     runs-on: ubuntu-latest
     timeout-minutes: 350
 
@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests telethon colorama
 
-      - name: Chay Mini Game Mines 3 Bom Lien Tuc
+      - name: Chay Bot Thu Hoach & Tang Toc Overclock
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONIOENCODING: "utf-8"
@@ -34,4 +34,10 @@ jobs:
           TELEGRAM_STRING_SESSION_ACC4: ${{ secrets.TELEGRAM_STRING_SESSION_ACC4 }}
           TELEGRAM_STRING_SESSION_ACC5: ${{ secrets.TELEGRAM_STRING_SESSION_ACC5 }}
         run: |
-          python auto_mines_3bom.py
+          while true; do
+            python auto_pitcoin_farm.py || true
+            echo "--------------------------------------------------------"
+            echo "Nghi 30 phut roi tu dong thu hoach chu ky tiep theo..."
+            echo "--------------------------------------------------------"
+            sleep 1800
+          done
