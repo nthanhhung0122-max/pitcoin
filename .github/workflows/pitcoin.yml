@@ -1,0 +1,43 @@
+name: Auto Pitcoin 24/7
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
+
+jobs:
+  run-pitcoin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests telethon colorama
+
+      - name: Chay Bot Pitcoin (Tu dong khoi dong lai neu dung)
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTHONIOENCODING: "utf-8"
+          TELEGRAM_STRING_SESSION_ACC1: ${{ secrets.TELEGRAM_STRING_SESSION_ACC1 }}
+          TELEGRAM_STRING_SESSION_ACC2: ${{ secrets.TELEGRAM_STRING_SESSION_ACC2 }}
+          TELEGRAM_STRING_SESSION_ACC3: ${{ secrets.TELEGRAM_STRING_SESSION_ACC3 }}
+          TELEGRAM_STRING_SESSION_ACC4: ${{ secrets.TELEGRAM_STRING_SESSION_ACC4 }}
+          TELEGRAM_STRING_SESSION_ACC5: ${{ secrets.TELEGRAM_STRING_SESSION_ACC5 }}
+        run: |
+          while true; do
+            python auto_pitcoin.py || true
+            echo "--------------------------------------------------------"
+            echo "Phien ket thuc, nghi 1800 giay (30 phut) roi tu dong khoi dong lai..."
+            echo "--------------------------------------------------------"
+            sleep 1800
+          done
