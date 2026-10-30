@@ -1,11 +1,13 @@
 """
 TOOL MINI GAME MINES CHUYEN BIET:
-- Chay xoay vong lien tuc qua tat ca tai khoan (Loop 24/7).
-- Luon chon o dau tien hang 1 tu trai qua phai (tile 0).
-- So luong bom: 5 bom tren ban 5x5 (He so an: 1.2125x).
-- Muc cuoc co ban: 20 PTC.
-- Khi thang 10 lan lien tuc: Tang cuoc len 50 PTC dung 1 luot, sau do ve 20 PTC.
-- Dieu kien dung moi phien: Thua 2 tran lien tiep [L, L] HOAC thua cach 1 [L, W, L].
+- Chay xoay vong lien tuc 24/7 qua cac tai khoan.
+- Chien thuat o chon:
+    + Mac dinh mo O 1 (Hang 1 o dau tien #0)
+    + Neu O 1 thua -> Chuyen sang O ben canh (#1)
+    + Neu O ben canh thang -> Quay lai O 1
+    + Neu O ben canh thua -> KET THUC VAN / DUNG PHIEN
+- 5 Bom / 25 O (He so: 1.2125x).
+- Muc cuoc co ban: 20 PTC (Dat chuoi 10 win -> cuoc 1 tran 50 PTC roi ve 20 PTC).
 """
 
 import os
@@ -32,8 +34,9 @@ API_BASE = "https://api.pitcoindrop.com/api"
 # =============================================================================
 # CAU HINH CHIEN THUAT TU DONG
 # =============================================================================
-MINE_COUNT = 5               # 5 Bom / 25 O
-FIXED_TILE = 0               # Luon chon o dau tien hang 1 tu trai qua phai (Index 0)
+MINE_COUNT = 5               # 5 Bom / 25 O (He so an: 1.2125x)
+PRIMARY_TILE = 0             # O 1: Hang 1 o dau tien tu trai qua phai (Index 0)
+ADJACENT_TILE = 1            # O ben canh: Hang 1 o thu hai (Index 1)
 BASE_WAGER = 20              # Muc cuoc mac dinh: 20 PTC
 BOOST_WAGER = 50             # Tang cuoc len 50 PTC khi win streak 10
 STREAK_TARGET = 10           # 10 lan trung lien tuc de kich hoat boost 50 PTC
@@ -85,18 +88,11 @@ async def fetch_fresh_init(session_str):
         log("WARN", f"Loi Telethon: {e}", Fore.YELLOW)
         return None
 
-def check_stop_conditions(history):
-    if len(history) >= 2 and history[-1] == 'L' and history[-2] == 'L':
-        return True, "Thua 2 luot lien tiep [L, L]"
-    if len(history) >= 3 and history[-1] == 'L' and history[-2] == 'W' and history[-3] == 'L':
-        return True, "Thua 2 luot cach nhau 1 tran [L, W, L]"
-    return False, ""
-
 def play_mines_custom(acc):
     name = acc["name"]
     s_str = acc.get("string_session")
     print("\n" + "="*70)
-    log("ACCOUNT", f"=== CHOI MINES: {name} (5 Bom - O #0 - Cuoc 20 PTC) ===", Fore.CYAN)
+    log("ACCOUNT", f"=== CHOI MINES: {name} (5 Bom - Chien thuat doi o) ===", Fore.CYAN)
     print("="*70)
 
     init_data = acc.get("init_data")
@@ -105,7 +101,7 @@ def play_mines_custom(acc):
         acc["init_data"] = init_data
 
     if not init_data:
-        log("SKIP", f"Chua co session cho {name}. Chuyen tai khoan tiep theo!", Fore.YELLOW)
+        log("SKIP", f"Chua co session cho {name}. Chuyen acc tiep theo!", Fore.YELLOW)
         return
 
     headers = {
@@ -128,7 +124,7 @@ def play_mines_custom(acc):
         return
 
     start_balance = balance
-    log("WALLET", f"So du hien tai: {Fore.GREEN}{balance:,.4f} PTC{Style.RESET_ALL}")
+    log("WALLET", f"So du ban dau: {Fore.GREEN}{balance:,.4f} PTC{Style.RESET_ALL} | O 1 (#{PRIMARY_TILE}) -> O ben canh (#{ADJACENT_TILE})")
 
     # Thu hoi van cu chua ket thuc neu co
     try:
@@ -139,8 +135,13 @@ def play_mines_custom(acc):
         pass
 
     game_count = 0
+    wins = 0
+    losses = 0
+    total_profit = 0
     consecutive_wins = 0
+    max_streak = 0
     history = []
+    current_tile = PRIMARY_TILE  # Luon bat dau voi O 1
 
     while True:
         if balance < BASE_WAGER:
@@ -161,9 +162,10 @@ def play_mines_custom(acc):
 
         game_count += 1
         client_seed = f"seed_{random.randint(100000, 999999)}_{game_count}"
-        print(f"\n--- [Van #{game_count}] Cuoc: {current_wager} PTC | 5 Bom | O #{FIXED_TILE} | Chuoi thang: {consecutive_wins} ---")
+        tile_name = f"O 1 (#{PRIMARY_TILE})" if current_tile == PRIMARY_TILE else f"O BEN CANH (#{ADJACENT_TILE})"
 
-        # 1. Bat dau van
+        print(f"\n{Fore.LIGHTBLACK_EX}--- [Van #{game_count}] Cuoc: {current_wager} PTC | 5 Bom | Chon: {tile_name} | Chuoi thang: {consecutive_wins} ---{Style.RESET_ALL}")
+
         try:
             r_start_raw = requests.post(f"{API_BASE}/games/mines/start", headers=headers, json={
                 "wager": current_wager,
@@ -186,11 +188,11 @@ def play_mines_custom(acc):
             balance = r_start.get("claimedPITBalance", balance - current_wager)
             time.sleep(1.0)
 
-            # 2. Mo o dau tien hang 1 (o #0)
-            log("PICK", f"Dang mo o #{FIXED_TILE} (Hang 1 o dau tien)...", Fore.YELLOW)
+            # Mo o theo trang thai hien tai (O 1 hoac O ben canh)
+            log("PICK", f"Dang mo {tile_name}...", Fore.YELLOW)
             r_rev = requests.post(f"{API_BASE}/games/mines/reveal", headers=headers, json={
                 "gameId": game_id,
-                "tileIndex": FIXED_TILE
+                "tileIndex": current_tile
             }, timeout=10).json()
 
             if not r_rev.get("success"):
@@ -198,37 +200,52 @@ def play_mines_custom(acc):
                 break
 
             if r_rev.get("busted"):
+                losses += 1
+                total_profit -= current_wager
                 consecutive_wins = 0
                 history.append('L')
-                log("BOOM", f"O #{FIXED_TILE} dinh BOM! Mat {current_wager} PTC. So du: {balance:,.4f} PTC", Fore.RED)
+
+                if current_tile == PRIMARY_TILE:
+                    # Neu chon O 1 ma thua -> chuyen sang O ben canh de go!
+                    log("BOOM", f"O 1 (#{PRIMARY_TILE}) dinh BOM! Mat {current_wager} PTC. So du: {balance:,.4f} PTC", Fore.RED)
+                    current_tile = ADJACENT_TILE
+                    log("SWITCH", f"🔄 O 1 THUA -> Chuyen sang O BEN CANH (#{ADJACENT_TILE}) cho van tiep theo!", Fore.CYAN)
+                else:
+                    # O ben canh ma lai THUA -> KET THUC VAN / DUNG PHIEN!
+                    log("BOOM", f"O BEN CANH (#{ADJACENT_TILE}) cung dinh BOM! Mat {current_wager} PTC. So du: {balance:,.4f} PTC", Fore.RED)
+                    print("\n" + "!"*60)
+                    log("STOP_TRIGGERED", f"🛑 O BEN CANH THUA -> KET THUC VAN/PHIEN CHO {name} THEO YEU CAU!", Fore.RED)
+                    log("LICH_SU", f"Lich su cac van gan nhat: {history[-5:]}", Fore.YELLOW)
+                    print("!"*60)
+                    break
             else:
                 mult = r_rev["game"].get("currentMultiplier", 1.2125)
-                log("GEM", f"O #{FIXED_TILE} la KIM CUONG ({mult:.4f}x) -> Cashout ngay!", Fore.GREEN)
+                log("GEM", f"{tile_name} la KIM CUONG! He so: {Fore.GREEN}{mult:.4f}x{Style.RESET_ALL} -> Cashout chot loi ngay!", Fore.GREEN)
                 time.sleep(0.8)
 
-                # 3. Cashout chot loi
+                # Cashout
                 r_cash = requests.post(f"{API_BASE}/games/mines/cashout", headers=headers, json={"gameId": game_id}, timeout=10).json()
                 if r_cash.get("success"):
                     payout = r_cash["game"].get("payout", current_wager * mult)
                     profit = payout - current_wager
                     balance = r_cash.get("claimedPITBalance", balance + payout)
+                    wins += 1
+                    total_profit += profit
                     consecutive_wins += 1
+                    max_streak = max(max_streak, consecutive_wins)
                     history.append('W')
                     log("CASHOUT", f"CHOT LOI: {Fore.GREEN}+{payout:,.4f} PTC{Style.RESET_ALL} (Lai: +{profit:,.4f} PTC) | So du: {balance:,.4f} PTC", Fore.GREEN)
 
-            # Het 1 luot boost 50 PTC -> chinh lai ve 20 PTC
-            if is_boost_round:
-                log("RESET", f"Da het luot dac biet. Chinh lai cuoc ve {BASE_WAGER} PTC!", Fore.CYAN)
-                consecutive_wins = 0
+                    # Neu dang o O ben canh ma THANG -> QUAY LAI O 1
+                    if current_tile == ADJACENT_TILE:
+                        log("RECOVER_OK", f"🎉 O BEN CANH THANG! QUAY LAI O 1 (#{PRIMARY_TILE}) CHO VAN TIEP THEO!", Fore.GREEN)
+                        current_tile = PRIMARY_TILE
+                else:
+                    log("ERR", f"Loi cashout: {r_cash.get('error')}", Fore.RED)
 
-            # 4. Kiem tra dieu kien dung
-            should_stop, stop_reason = check_stop_conditions(history)
-            if should_stop:
-                print("\n" + "!"*60)
-                log("STOP_TRIGGERED", f"DUNG PHIEN CHO {name}: {stop_reason}!", Fore.RED)
-                log("HISTORY", f"Lich su 5 van gan nhat: {history[-5:]}", Fore.YELLOW)
-                print("!"*60)
-                break
+            if is_boost_round:
+                log("RESET_BOOST", f"Da hoan thanh luot cuoc dac biet {BOOST_WAGER} PTC. Chinh ve {BASE_WAGER} PTC!", Fore.CYAN)
+                consecutive_wins = 0
 
         except Exception as e:
             log("ERR", f"Loi van choi: {e}", Fore.RED)
@@ -236,16 +253,22 @@ def play_mines_custom(acc):
 
         time.sleep(DELAY_BETWEEN_GAMES)
 
+    # Tong ket phien
+    print("\n" + "="*60)
+    log("SUMMARY", f"TONG KET CHO {name}: Thang: {wins} | Thua: {losses} | Lai: {total_profit:+,.4f} PTC | So du: {balance:,.4f} PTC", Fore.CYAN)
+    print("="*60 + "\n")
+
 def main():
     print(f"""
 {Fore.CYAN}======================================================================
      TOOL MINES 5 BOM - CUOC 20 PTC - CHAY XOAY VONG LIEN TUC 24/7
-     - O chon co dinh: Hang 1 o dau tien tu trai sang (#{FIXED_TILE})
+     - Chien thuat o chon:
+         + Mac dinh mo O 1 (Hang 1 o dau tien #{PRIMARY_TILE})
+         + Neu O 1 thua -> Chuyen sang O ben canh (#{ADJACENT_TILE})
+         + Neu O ben canh thang -> Quay lai O 1
+         + Neu O ben canh thua -> KET THUC VAN / DUNG PHIEN
      - So bom: {MINE_COUNT} Bom / 25 O (He so an: 1.2125x)
      - Muc cuoc: {BASE_WAGER} PTC (Streak 10 win -> Cuoc 1 tran {BOOST_WAGER} PTC roi ve {BASE_WAGER} PTC)
-     - Dieu kien dung moi phien:
-         + Thua 2 luot lien tiep [L, L]
-         + Thua 2 luot cach nhau 1 tran [L, W, L]
      - Che do: Chay xoay vong tat ca tai khoan lien tuc!
 ======================================================================{Style.RESET_ALL}
     """)
@@ -261,7 +284,7 @@ def main():
             time.sleep(2)
 
         print("\n" + "="*60)
-        log("LOOP", f"Hoan thanh vong #{cycle_count}. Tam nghi {COOLDOWN_BETWEEN_CYCLES} giay truoc khi vao vong moi...", Fore.CYAN)
+        log("LOOP", f"Hoan thanh vong #{cycle_count}. Tam nghi {COOLDOWN_BETWEEN_CYCLES}s truoc khi vao vong moi...", Fore.CYAN)
         print("="*60 + "\n")
         time.sleep(COOLDOWN_BETWEEN_CYCLES)
 
@@ -269,4 +292,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n{Fore.YELLOW}[EXIT] Da dung chuong trinh theo yeu cau.{Style.RESET_ALL}")
+        print(f"\n{Fore.YELLOW}[EXIT] Da dung chuong trinh.{Style.RESET_ALL}")
